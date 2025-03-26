@@ -10,6 +10,7 @@ import {
 import fs from "fs/promises";
 import path from "path";
 import os from 'os';
+import { spawn } from 'child_process';
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { diffLines, createTwoFilesPatch } from 'diff';
@@ -347,6 +348,14 @@ const SearchFilesByNameArgsSchema = z.object({
   excludePatterns: z.array(z.string()).optional().default([])
 });
 
+const SearchFilesByContentArgsSchema = z.object({
+  path: z.string(),
+  pattern: z.string(),
+  excludePatterns: z.array(z.string()).optional().default([]),
+  caseSensitive: z.boolean().optional().default(false),
+  maxResults: z.number().optional().default(100)
+});
+
 const GetFileInfoArgsSchema = z.object({
   path: z.string(),
 });
@@ -389,6 +398,106 @@ async function getFileStats(filePath: string): Promise<FileInfo> {
     isFile: stats.isFile(),
     permissions: stats.mode.toString(8).slice(-3),
   };
+}
+
+async function search_files_by_content(
+  rootPath: string,
+  pattern: string,
+  excludePatterns: string[] = [],
+  caseSensitive: boolean = false,
+  maxResults: number = 100
+): Promise<{file: string, line: number, content: string}[]> {
+  return new Promise((resolve, reject) => {
+    // Create arguments for ripgrep
+    const rgArgs = [
+      '--json',               // Output in JSON format
+      '--max-count', maxResults.toString(), // Limit number of results
+      '--no-config',         // Ignore any ripgrep config files
+      '--hidden',            // Include hidden files
+      pattern                // Search pattern
+    ];
+    
+    // Add case sensitivity flag if needed
+    if (!caseSensitive) {
+      rgArgs.unshift('-i');
+    }
+    
+    // Add exclusion patterns if provided
+    for (const excludePattern of excludePatterns) {
+      rgArgs.unshift('--glob', `!${excludePattern}`);
+    }
+    
+    // Add path to search
+    rgArgs.push(rootPath);
+    
+    // Execute ripgrep command
+    const ripgrep = spawn('rg', rgArgs);
+    let stdout = '';
+    let stderr = '';
+    
+    ripgrep.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+    
+    ripgrep.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+    
+    ripgrep.on('close', (code) => {
+      if (code !== 0 && code !== 1) {
+        // code 1 means no matches found which is okay
+        return reject(new Error(`ripgrep process exited with code ${code}: ${stderr}`));
+      }
+      
+      const results: {file: string, line: number, content: string}[] = [];
+      
+      // Process the JSON output line by line
+      const lines = stdout.split('\n').filter(line => line.trim() !== '');
+      
+      for (const line of lines) {
+        try {
+          const data = JSON.parse(line);
+          
+          // We only care about match type objects
+          if (data.type === 'match') {
+            const filepath = data.data.path.text;
+            
+            // Validate the path is allowed
+            try {
+              validatePath(filepath);
+            } catch (error) {
+              // Skip this file as it's not in allowed paths
+              continue;
+            }
+            
+            // Process each match
+            for (const submatch of data.data.submatches) {
+              results.push({
+                file: filepath,
+                line: data.data.line_number,
+                content: data.data.lines.text.trim()
+              });
+              
+              // Break if we've hit max results
+              if (results.length >= maxResults) {
+                break;
+              }
+            }
+          }
+        } catch (error) {
+          // Skip invalid JSON lines
+          continue;
+        }
+        
+        // Break if we've hit max results
+        if (results.length >= maxResults) {
+          break;
+        }
+      }
+      
+      resolve(results);
+    });
+  });
 }
 
 async function search_files_by_name(
@@ -631,6 +740,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         inputSchema: zodToJsonSchema(SearchFilesByNameArgsSchema) as ToolInput,
       },
       {
+        name: "search_files_by_content",
+        description:
+          "Search for text patterns inside files using ripgrep. " +
+          "This powerful search examines file contents rather than just names, " +
+          "making it perfect for finding specific code, text, or data patterns " +
+          "across multiple files. Results include filename, line number, and the " +
+          "matching line content. Options include case sensitivity controls and " +
+          "result limiting. Only searches within allowed directories.",
+        inputSchema: zodToJsonSchema(SearchFilesByContentArgsSchema) as ToolInput,
+      },
+      {
         name: "get_file_info",
         description:
           "Retrieve detailed metadata about a file or directory. Returns comprehensive " +
@@ -842,6 +962,36 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const results = await search_files_by_name(validPath, parsed.data.pattern, parsed.data.excludePatterns);
         return {
           content: [{ type: "text", text: results.length > 0 ? results.join("\n") : "No matches found" }],
+        };
+      }
+
+      case "search_files_by_content": {
+        const parsed = SearchFilesByContentArgsSchema.safeParse(args);
+        if (!parsed.success) {
+          throw new Error(`Invalid arguments for search_files_by_content: ${parsed.error}`);
+        }
+        const validPath = await validatePath(parsed.data.path);
+        const results = await search_files_by_content(
+          validPath, 
+          parsed.data.pattern, 
+          parsed.data.excludePatterns,
+          parsed.data.caseSensitive,
+          parsed.data.maxResults
+        );
+        
+        if (results.length === 0) {
+          return {
+            content: [{ type: "text", text: "No matches found" }],
+          };
+        }
+        
+        // Format the results for better readability
+        const formattedResults = results.map(result => {
+          return `${result.file}:${result.line}: ${result.content}`;
+        }).join("\n");
+        
+        return {
+          content: [{ type: "text", text: formattedResults }],
         };
       }
 
