@@ -87,7 +87,7 @@ You can specify paths to exclude by adding an exclamation mark followed by comma
     - `destination` (string)
   - Fails if destination exists
 
-- **search_files**
+- **search_files_by_name**
   - Recursively search for files/directories
   - Inputs:
     - `path` (string): Starting directory

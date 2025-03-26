@@ -341,7 +341,7 @@ const MoveFileArgsSchema = z.object({
   destination: z.string(),
 });
 
-const SearchFilesArgsSchema = z.object({
+const SearchFilesByNameArgsSchema = z.object({
   path: z.string(),
   pattern: z.string(),
   excludePatterns: z.array(z.string()).optional().default([])
@@ -391,7 +391,7 @@ async function getFileStats(filePath: string): Promise<FileInfo> {
   };
 }
 
-async function searchFiles(
+async function search_files_by_name(
   rootPath: string,
   pattern: string,
   excludePatterns: string[] = []
@@ -621,14 +621,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         inputSchema: zodToJsonSchema(MoveFileArgsSchema) as ToolInput,
       },
       {
-        name: "search_files",
+        name: "search_files_by_name",
         description:
           "Recursively search for files and directories matching a pattern. " +
           "Searches through all subdirectories from the starting path. The search " +
           "is case-insensitive and matches partial names. Returns full paths to all " +
           "matching items. Great for finding files when you don't know their exact location. " +
           "Only searches within allowed directories.",
-        inputSchema: zodToJsonSchema(SearchFilesArgsSchema) as ToolInput,
+        inputSchema: zodToJsonSchema(SearchFilesByNameArgsSchema) as ToolInput,
       },
       {
         name: "get_file_info",
@@ -833,13 +833,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         };
       }
 
-      case "search_files": {
-        const parsed = SearchFilesArgsSchema.safeParse(args);
+      case "search_files_by_name": {
+        const parsed = SearchFilesByNameArgsSchema.safeParse(args);
         if (!parsed.success) {
-          throw new Error(`Invalid arguments for search_files: ${parsed.error}`);
+          throw new Error(`Invalid arguments for search_files_by_name: ${parsed.error}`);
         }
         const validPath = await validatePath(parsed.data.path);
-        const results = await searchFiles(validPath, parsed.data.pattern, parsed.data.excludePatterns);
+        const results = await search_files_by_name(validPath, parsed.data.pattern, parsed.data.excludePatterns);
         return {
           content: [{ type: "text", text: results.length > 0 ? results.join("\n") : "No matches found" }],
         };
