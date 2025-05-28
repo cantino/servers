@@ -47,27 +47,21 @@ You can specify paths to exclude by adding an exclamation mark followed by comma
     - `content` (string): File content
 
 - **edit_file**
-  - Make selective edits using advanced pattern matching and formatting
+  - Make edits to a text file by replacing specified text segments.
   - Features:
-    - Line-based and multi-line content matching
-    - Whitespace normalization with indentation preservation
-    - Fuzzy matching with confidence scoring
-    - Multiple simultaneous edits with correct positioning
-    - Indentation style detection and preservation
-    - Git-style diff output with context
-    - Preview changes with dry run mode
-    - Failed match debugging with confidence scores
+    - Exact match: First attempts to find an exact match for `oldText`.
+    - Line-based fallback: If no exact match, it attempts a line-by-line comparison where each line from `oldText` is compared to lines in the content after trimming whitespace.
+    - Indentation preservation: When replacing content using the line-based fallback, the indentation of the first line of the matched block is preserved in `newText`.
+    - Sequential edits: Applies multiple edits in the order they are provided.
+    - Git-style diff output: Returns a diff of the changes.
+    - Dry run mode: Allows previewing changes before they are applied.
   - Inputs:
     - `path` (string): File to edit
     - `edits` (array): List of edit operations
-      - `oldText` (string): Text to search for (can be substring)
-      - `newText` (string): Text to replace with
-    - `dryRun` (boolean): Preview changes without applying (default: false)
-    - `options` (object): Optional formatting settings
-      - `preserveIndentation` (boolean): Keep existing indentation (default: true)
-      - `normalizeWhitespace` (boolean): Normalize spaces while preserving structure (default: true)
-      - `partialMatch` (boolean): Enable fuzzy matching (default: true)
-  - Returns detailed diff and match information for dry runs, otherwise applies changes
+      - `oldText` (string): Text to search for.
+      - `newText` (string): Text to replace with.
+    - `dryRun` (boolean): Preview changes without applying (default: false).
+  - Returns a git-style diff. If `dryRun` is true, changes are not written to disk.
   - Best Practice: Always use dryRun first to preview changes before applying them
 
 - **create_directory**
@@ -79,6 +73,11 @@ You can specify paths to exclude by adding an exclamation mark followed by comma
 - **list_directory**
   - List directory contents with [FILE] or [DIR] prefixes
   - Input: `path` (string)
+
+- **directory_tree**
+  - Get a recursive tree view of files and directories as a JSON structure. Each entry includes 'name', 'type' (file/directory), and 'children' for directories. Files have no children array, while directories always have a children array (which may be empty). The output is formatted with 2-space indentation for readability. Only works within allowed directories.
+  - Input: `path` (string)
+  - Returns: A JSON string representing the directory tree.
 
 - **move_file**
   - Move or rename files and directories
@@ -95,6 +94,16 @@ You can specify paths to exclude by adding an exclamation mark followed by comma
     - `excludePatterns` (string[]): Exclude any patterns. Glob formats are supported.
   - Case-insensitive matching
   - Returns full paths to matches
+
+- **search_files_by_content**
+  - Search for text patterns inside files using ripgrep. This powerful search examines file contents rather than just names, making it perfect for finding specific code, text, or data patterns across multiple files. Results include filename, line number, and the matching line content. Options include case sensitivity controls and result limiting. Only searches within allowed directories.
+  - Inputs:
+    - `path` (string): Starting directory for the search.
+    - `pattern` (string): The text pattern to search for.
+    - `excludePatterns` (string[] optional): Glob patterns to exclude files/directories from the search. Defaults to [].
+    - `caseSensitive` (boolean optional): Whether the search should be case-sensitive. Defaults to false.
+    - `maxResults` (number optional): The maximum number of results to return. Defaults to 100.
+  - Returns: A list of matches, including file path, line number, and the content of the matching line.
 
 - **get_file_info**
   - Get detailed file/directory metadata
