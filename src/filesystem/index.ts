@@ -47,7 +47,7 @@ function expandHome(filepath: string): string {
 }
 
 // Default exclusion patterns that always apply
-const DEFAULT_EXCLUSIONS = ['.git', 'node_modules'];
+const DEFAULT_EXCLUSIONS = ['.git', 'node_modules', '.DS_Store'];
 
 // Store allowed directories and their exclusions in normalized form
 const allowedDirectoriesConfig = args.map(dir => {
